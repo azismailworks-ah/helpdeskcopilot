@@ -298,5 +298,15 @@ function renderFormattedData(json) {
   return out + `==============================`;
 }
 </script>
+<script>
+// biar bisa kirim pesan dengan menekan tombol Enter
+document.getElementById("userInput").addEventListener("keypress", function(event) {
+  if (event.key === "Enter") {
+    event.preventDefault(); // mencegah form reload
+    sendMessage(); // panggil fungsi kirim
+  }
+});
+</script>
 </body>
 </html>
+
