@@ -1,0 +1,302 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8">
+<title>Helpdesk DIOC Chatbot</title>
+<style>
+  body {
+    background-color: #f3f4f6;
+    font-family: 'Segoe UI', sans-serif;
+    display: flex;
+    flex-direction: column;
+    height: 100vh;
+    margin: 0;
+  }
+  .chat-container {
+    flex: 1;
+    padding: 20px;
+    overflow-y: auto;
+    background: white;
+    border-radius: 10px;
+    margin: 10px;
+    box-shadow: 0 0 10px rgba(0,0,0,0.1);
+  }
+  .bot, .user {
+    margin: 10px 0;
+    padding: 10px;
+    border-radius: 10px;
+    max-width: 80%;
+  }
+  .bot {
+    background-color: #e5e7eb;
+    align-self: flex-start;
+  }
+  .user {
+    background-color: #4f46e5;
+    color: white;
+    align-self: flex-end;
+  }
+  .input-container {
+    display: flex;
+    padding: 10px;
+    background-color: #fff;
+    border-top: 1px solid #ddd;
+  }
+  input {
+    flex: 1;
+    padding: 10px;
+    border-radius: 8px;
+    border: 1px solid #ddd;
+  }
+  button {
+    margin-left: 10px;
+    background-color: #4f46e5;
+    color: white;
+    border: none;
+    border-radius: 8px;
+    padding: 10px 15px;
+    cursor: pointer;
+  }
+</style>
+</head>
+<body>
+<div class="chat-container" id="chatBox"></div>
+<div class="input-container">
+  <input id="userInput" type="text" placeholder="Ketik pesan di sini..." />
+  <button onclick="sendMessage()">Kirim</button>
+</div>
+
+<script>
+const apiMap = {
+  ctt: "https://script.google.com/macros/s/AKfycbzL4sVI8F_ODlAYAqviPEmQjzXcrFG8DDE9OCDhRoywM6BasycxFIwnEBOSmgjyn-oeQg/exec",
+  vip: "https://script.google.com/macros/s/AKfycbxsGHM4lOmwDVdsLtuxbNo6KoN6gohFAwV842Ga54xcawKGi0qzTIcXQp_UqVVCf7Mo/exec",
+  sqdt: "https://script.google.com/macros/s/AKfycbyQZVKIbzMrzJBYuwBB38RzhpKSXZo5HRRTODNDULvUCMqERI0T2yQIuERmHx_ReikS/exec",
+  traffic: "https://script.google.com/macros/s/AKfycbxt35Lycf29gUTwM0-xgq8Bo_Y2kUBhzai4igalDyzei5d8ByUBKvoxd2zD6n5o4RxK/exec"
+};
+
+let currentMenu = "main";
+let awaitingArea = false;
+let awaitingSiteId = false;
+let awaitingNott = false;
+let activeModule = ""; // ctt | vip | sqdt | traffic
+
+// === Utility Functions ===
+function appendMessage(sender, text) {
+  const chatBox = document.getElementById("chatBox");
+  const msg = document.createElement("div");
+  msg.className = sender;
+  msg.innerHTML = text.replace(/\n/g, "<br>");
+  chatBox.appendChild(msg);
+  chatBox.scrollTop = chatBox.scrollHeight;
+}
+
+function botReply(text) {
+  appendMessage("bot", `<b>HD DIOC:</b> ${text}`);
+}
+
+function sendMessage() {
+  const input = document.getElementById("userInput");
+  const message = input.value.trim();
+  if (!message) return;
+  appendMessage("user", message);
+  input.value = "";
+  handleUserMessage(message);
+}
+
+// === Main Logic ===
+async function handleUserMessage(msg) {
+  msg = msg.toLowerCase();
+
+  // --- Mode Input Site ID ---
+  if (awaitingSiteId) {
+    awaitingSiteId = false;
+    return fetchApi(activeModule, `${activeModule.toUpperCase()} ${msg}`);
+  }
+
+  // --- Mode Input NoTT ---
+  if (awaitingNott) {
+    awaitingNott = false;
+    return fetchApi("sqdt", `SQDT NOTT ${msg}`);
+  }
+
+  // --- Mode Input Area ---
+  if (awaitingArea) {
+    const areas = ["jabodetabek","sumatera","cwj","ejbn","kalimantan","sumapa"];
+    const idx = parseInt(msg);
+
+    if (msg === "0") {
+      awaitingArea = false;
+      return showSubMenu(activeModule);
+    }
+
+    if (!isNaN(idx) && idx >= 1 && idx <= 6) {
+      botReply(`🔄 Mengambil data ${activeModule.toUpperCase()} area ${areas[idx-1].toUpperCase()}...`);
+      await fetchApi(activeModule, `${activeModule.toUpperCase()} AREA ${areas[idx-1]}`);
+      return;
+    }
+
+    return botReply("⚠️ Pilihan area tidak valid. Ketik 1–6 atau 0 untuk kembali.");
+  }
+
+  // --- Menu Utama ---
+  if (msg === "hi aziz" || msg === "0") {
+    currentMenu = "main";
+    activeModule = "";
+    awaitingArea = false;
+    awaitingSiteId = false;
+    awaitingNott = false;
+    return showMainMenu();
+  }
+
+  if (currentMenu === "main") {
+    if (msg === "1") { activeModule = "ctt"; return showSubMenu("ctt"); }
+    if (msg === "2") { activeModule = "vip"; return showSubMenu("vip"); }
+    if (msg === "3") { activeModule = "sqdt"; return showSubMenu("sqdt"); }
+    if (msg === "4") { activeModule = "traffic"; return showSubMenu("traffic"); }
+    return botReply("⚠️ Pilihan tidak valid. Ketik 1–4.");
+  }
+
+  // --- Submenu Logic ---
+  handleModuleSubmenu(msg);
+}
+
+// === Menu Rendering ===
+function showMainMenu() {
+  botReply(`Welcome to Helpdesk BOT.<br>Please choose problem you want to check:<br>
+1. CTT<br>2. VIP<br>3. SQDT<br>4. Traffic Degraded`);
+}
+
+function showSubMenu(module) {
+  currentMenu = module;
+  let menuText = "";
+
+  switch (module) {
+    case "ctt":
+      menuText = `1. CTT Summary OPEN<br>2. CTT OPEN<br>3. CTT Area<br>4. CTT SiteId<br>0. Back`;
+      break;
+    case "vip":
+      menuText = `1. VIP Summary OPEN<br>2. VIP OPEN<br>3. VIP SiteId<br>0. Back`;
+      break;
+    case "sqdt":
+      menuText = `1. SQDT Summary OPEN<br>2. SQDT Area<br>3. SQDT NOTT<br>0. Back`;
+      break;
+    case "traffic":
+      menuText = `1. TrafficDeg Summary OPEN<br>2. TrafficDeg OPEN<br>3. TrafficDeg Area<br>4. TrafficDeg SiteId<br>0. Back`;
+      break;
+  }
+
+  botReply(menuText);
+}
+
+// === Logic per Modul ===
+async function handleModuleSubmenu(msg) {
+  if (msg === "0") return showMainMenu();
+
+  const module = currentMenu;
+
+  switch (module) {
+    case "ctt":
+    case "traffic":
+      if (msg === "1") return fetchApi(module, `${module.toUpperCase()} SUMMARY`);
+      if (msg === "2") return fetchApi(module, `${module.toUpperCase()} OPEN`);
+      if (msg === "3") {
+        awaitingArea = true;
+        return showAreaMenu();
+      }
+      if (msg === "4") {
+        awaitingSiteId = true;
+        return botReply("Masukkan Site ID (contoh: 12JKB0001):");
+      }
+      break;
+
+    case "vip":
+      if (msg === "1") return fetchApi("vip", "VIP SUMMARY");
+      if (msg === "2") return fetchApi("vip", "VIP OPEN");
+      if (msg === "3") {
+        awaitingSiteId = true;
+        return botReply("Masukkan Site ID VIP yang ingin dicek:");
+      }
+      break;
+
+    case "sqdt":
+      if (msg === "1") return fetchApi("sqdt", "SQDT SUMMARY");
+      if (msg === "2") {
+        awaitingArea = true;
+        return showAreaMenu();
+      }
+      if (msg === "3") {
+        awaitingNott = true;
+        return botReply("Masukkan No TT yang ingin dicek:");
+      }
+      break;
+  }
+
+  botReply("⚠️ Pilihan tidak valid. Ketik sesuai nomor di menu.");
+}
+
+function showAreaMenu() {
+  botReply(`Silakan pilih area:<br>
+1. Jabodetabek<br>2. Sumatera<br>3. CWJ<br>4. EJBN<br>5. Kalimantan<br>6. Sumapa<br>0. Back`);
+}
+
+// === API Handler ===
+async function fetchApi(module, query) {
+  const apiUrl = apiMap[module];
+
+  // 🩵 PATCH UTAMA: Sesuaikan query untuk modul TRAFFIC
+  if (module === "traffic") {
+    query = query.replace(/^TRAFFIC/, "TRAFFICDEG");
+  }
+
+  try {
+    botReply(`🔄 Mengambil data dari server ${module.toUpperCase()}...`);
+    const res = await fetch(`${apiUrl}?q=${encodeURIComponent(query)}`);
+    const dataText = await res.text();
+
+    let formatted = dataText;
+
+    try {
+      const json = JSON.parse(dataText);
+      formatted = renderFormattedData(json);
+    } catch (e) {
+      // bukan JSON, kirim teks mentah
+    }
+
+    botReply(`<b>Hasil untuk "${query}"</b><br>${formatted}`);
+  } catch (err) {
+    botReply(`⚠️ Gagal mengambil data dari API ${module.toUpperCase()}: ${err}`);
+  }
+}
+
+// === Formatter JSON ===
+function renderFormattedData(json) {
+  if (!json.title) return `<pre>${JSON.stringify(json, null, 2)}</pre>`;
+  let out = `📊 <b>${json.title}</b><br>🕒 ${json.report_time || ""}<br>==============================<br>`;
+
+  if (json.summary) {
+    json.summary.forEach(s => {
+      out += `📍 <b>${s.region}</b><br>Open: ${s.open_count}<br>`;
+      if (s.escalate_breakdown) {
+        out += `Escalation:<br>`;
+        Object.entries(s.escalate_breakdown).forEach(([k, v]) => out += `- ${k}: ${v}<br>`);
+      }
+      out += `<br>`;
+    });
+    out += `Total Open: ${json.total_open || "-"}<br>`;
+  }
+
+  if (json.data && Array.isArray(json.data)) {
+    json.data.forEach(d => {
+      if (d.site_id) out += `<b>${d.site_id}</b> | ${d.region || ""}<br>`;
+      if (d.status) out += `Status: ${d.status}<br>`;
+      if (d.escalate_to) out += `Escalate: ${d.escalate_to}<br>`;
+      if (d.finding) out += `Finding: ${d.finding}<br>`;
+      out += `<br>`;
+    });
+  }
+
+  return out + `==============================`;
+}
+</script>
+</body>
+</html>
